@@ -6,17 +6,9 @@ import polars as pl
 from tqdm import tqdm
 
 
-INPUT_PATH = Path("in.csv")
+INPUT_PATH = Path("sample_in.csv")
 OUTPUT_PATH = Path("out.csv")
 CHUNK_SIZE = 100_000
-
-POI_FEATURES = {
-    "poi_train_station": "高铁站",
-    "poi_airport": "机场",
-    "poi_subway_station": "地铁站",
-    "poi_tourist_attraction": "旅游景点",
-    "poi_hotel": "酒店旅馆",
-}
 
 APP_KEYWORDS = {
     "app_travel": ["同程旅行", "携程旅行", "去哪儿旅行", "华住会", "飞猪旅行", "美团"],
@@ -85,6 +77,7 @@ TIME_FEATURES = {
 }
 
 REQUIRED_COLUMNS = ["time", "udid", "text"]
+CITY_PATTERN = r"城市：([^，]*)"
 POI_PATTERN = r"POI：([^，]*)"
 
 
@@ -106,12 +99,10 @@ def build_any_keyword_expr(source: pl.Expr, keywords: list[str]) -> pl.Expr:
 
 def transform_batch(batch: pl.DataFrame) -> pl.DataFrame:
     text_expr = pl.col("text").fill_null("")
+    city_expr = text_expr.str.extract(CITY_PATTERN, group_index=1).fill_null("")
     poi_expr = text_expr.str.extract(POI_PATTERN, group_index=1).fill_null("")
 
     feature_exprs = []
-
-    for column_name, keyword in POI_FEATURES.items():
-        feature_exprs.append(build_contains_expr(poi_expr, keyword).alias(column_name))
 
     for column_name, keywords in APP_KEYWORDS.items():
         feature_exprs.append(build_any_keyword_expr(text_expr, keywords).alias(column_name))
@@ -122,7 +113,16 @@ def transform_batch(batch: pl.DataFrame) -> pl.DataFrame:
     for column_name, keyword in TIME_FEATURES.items():
         feature_exprs.append(build_contains_expr(text_expr, keyword).alias(column_name))
 
-    return batch.select([pl.col("time"), pl.col("udid"), pl.col("text"), *feature_exprs])
+    return batch.select(
+        [
+            pl.col("time"),
+            pl.col("udid"),
+            pl.col("text"),
+            city_expr.alias("city"),
+            poi_expr.alias("poi"),
+            *feature_exprs,
+        ]
+    )
 
 
 def validate_columns(csv_path: Path) -> None:
@@ -140,21 +140,19 @@ def process_csv(input_path: Path, output_path: Path, chunk_size: int) -> None:
     total_chunks = math.ceil(total_rows / chunk_size) if total_rows else 0
     output_columns = [
         *REQUIRED_COLUMNS,
-        *POI_FEATURES.keys(),
+        "city",
+        "poi",
         *APP_KEYWORDS.keys(),
         *MOVE_FEATURES.keys(),
         *TIME_FEATURES.keys(),
     ]
 
     if total_rows == 0:
-        empty_schema = {column: pl.Utf8 for column in REQUIRED_COLUMNS}
-        empty_schema.update(
-            {
-                column: pl.Boolean
-                for column in output_columns
-                if column not in REQUIRED_COLUMNS
-            }
-        )
+        text_columns = set(REQUIRED_COLUMNS + ["city", "poi"])
+        empty_schema = {
+            column: pl.Utf8 if column in text_columns else pl.Boolean
+            for column in output_columns
+        }
         pl.DataFrame(schema=empty_schema).select(output_columns).write_csv(output_path)
         return
 
