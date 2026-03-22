@@ -1087,12 +1087,16 @@ def build_output_columns(batch_columns: list[str], save_all_columns: bool) -> li
     if not save_all_columns:
         return [column for column in CORE_OUTPUT_COLUMNS if column in batch_columns]
 
-    extra_columns = [
-        column
-        for column in batch_columns
-        if column not in REQUIRED_COLUMNS and column != SCENE_LABEL_COLUMN
-    ]
-    return ["time", "udid", "text", SCENE_LABEL_COLUMN, *extra_columns]
+    ordered_columns = [column for column in batch_columns if column != SCENE_LABEL_COLUMN]
+    if "text" in ordered_columns:
+        text_index = ordered_columns.index("text")
+        return [
+            *ordered_columns[: text_index + 1],
+            SCENE_LABEL_COLUMN,
+            *ordered_columns[text_index + 1 :],
+        ]
+
+    return [*ordered_columns, SCENE_LABEL_COLUMN]
 
 
 def process_user_batch(user_batch: pl.DataFrame, scene_rules: list[SceneRule]) -> pl.DataFrame:
