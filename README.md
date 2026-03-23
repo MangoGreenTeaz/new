@@ -1,0 +1,88 @@
+# 项目说明
+
+## 目录
+
+- [项目概览](#项目概览)
+- [推荐使用流程](#推荐使用流程)
+- [当前使用中的文件](#当前使用中的文件)
+  - [feature.py](#featurepy)
+  - [scene_label.py](#scene_labelpy)
+  - [feature_output_schema.md](#feature_output_schemamd)
+  - [scene_rules.md](#scene_rulesmd)
+- [已废弃文件](#已废弃文件)
+- [文档跳转](#文档跳转)
+
+## 项目概览
+
+本项目包含两步核心处理流程：
+
+1. 使用 `feature.py` 对原始文本数据做特征提取，生成结构化特征数据。
+2. 使用 `scene_label.py` 在特征数据基础上进行场景识别与 `scene_label` 标注。
+
+## 推荐使用流程
+
+1. 先运行 `feature.py`
+   - 输入原始 `in.csv`
+   - 输出特征化后的 `out.csv`
+2. 再运行 `scene_label.py`
+   - 输入 `out.csv`
+   - 输出带场景标签的 `scene_out.csv`
+
+## 当前使用中的文件
+
+### `feature.py`
+
+作用：
+
+- 读取原始文本数据
+- 提取 `city`、`poi`、App 特征、移动特征、时间特征
+- 生成后续场景标注所需的结构化输入数据
+
+配套说明文档：[`feature_output_schema.md`](./feature_output_schema.md)
+
+### `scene_label.py`
+
+作用：
+
+- 读取 `feature.py` 输出的特征数据
+- 按优先级依次执行场景规则
+- 生成 `scene_label` 标注结果
+
+配套说明文档：[`scene_rules.md`](./scene_rules.md)
+
+### `feature_output_schema.md`
+
+作用：
+
+- 说明 `feature.py` 输出数据的字段结构
+- 说明每个字段的含义、类型、生成规则
+
+快速跳转：[`feature_output_schema.md`](./feature_output_schema.md)
+
+### `scene_rules.md`
+
+作用：
+
+- 维护 `scene_label.py` 中所有场景规则的人类可读说明
+- 记录场景优先级、判定逻辑、依赖字段和标签含义
+
+快速跳转：[`scene_rules.md`](./scene_rules.md)
+
+## 已废弃文件
+
+以下文件为旧版本实现，现已废弃，不再作为当前流程的一部分使用：
+
+- `scene_rules_old.md`
+- `scene_label_old.py`
+
+请以当前文件为准：
+
+- `feature.py`
+- `scene_label.py`
+- `feature_output_schema.md`
+- `scene_rules.md`
+
+## 文档跳转
+
+- 跳转到特征输出字段说明：[`feature_output_schema.md`](./feature_output_schema.md)
+- 跳转到场景规则说明：[`scene_rules.md`](./scene_rules.md)

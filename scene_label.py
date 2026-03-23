@@ -52,6 +52,7 @@ SELF_DRIVE_ARRIVAL_LABEL = "驾车抵达终点"
 SELF_DRIVE_POI_KEYWORDS = ["加油站", "电动车充电站", "服务区", "停车场"]
 TOURISM_VISIT_LABEL = "旅游参观"
 TOURISM_REST_LABEL = "旅游中途休息"
+TOURISM_DINING_LABEL = "旅游中用餐"
 HOTEL_CHECKIN_LABEL = "酒店办理入住"
 HOTEL_REST_LABEL = "旅游住宿休息"
 VENUE_VISIT_LABEL = "文化场馆参观"
@@ -477,6 +478,10 @@ def process_tourism_scene(user_df: pl.DataFrame) -> pl.DataFrame:
             if labels[label_index] != "":
                 continue
             current_row = rows[label_index]
+            if contains_keyword(current_row.get("poi"), "餐厅") and not truthy(current_row.get("move_any")):
+                labels[label_index] = TOURISM_DINING_LABEL
+                continue
+
             if not contains_keyword(current_row.get("poi"), "旅游景点"):
                 continue
 
