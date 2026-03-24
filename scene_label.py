@@ -906,73 +906,76 @@ def process_subway_scene(user_df: pl.DataFrame) -> pl.DataFrame:
             index += 1
             continue
 
-        next_labeled_index = next(
-            (
-                candidate_index
-                for candidate_index in range(index + 1, row_count)
-                if labels[candidate_index] != ""
-            ),
-            row_count,
-        )
-        window_end = min(index + 6, next_labeled_index)
-        if not any(truthy(rows[candidate_index].get("move_fast")) for candidate_index in range(index + 1, window_end)):
-            index += 1
-            continue
+        last_move = None
+        no_feature_streak = 0
+        scan_index = index + 1
 
-        stop_idx_first_nonmove = None
-        for scan_index in range(index + 1, next_labeled_index - 1):
-            if not truthy(rows[scan_index].get("move_any")) and not truthy(rows[scan_index + 1].get("move_any")):
-                stop_idx_first_nonmove = scan_index
+        while scan_index < row_count:
+            if labels[scan_index] != "":
                 break
 
-        if stop_idx_first_nonmove is None:
-            last_move = next(
-                (
-                    candidate_index
-                    for candidate_index in range(next_labeled_index - 1, index, -1)
-                    if truthy(rows[candidate_index].get("move_any"))
-                ),
-                None,
-            )
-        else:
-            last_move = next(
-                (
-                    candidate_index
-                    for candidate_index in range(stop_idx_first_nonmove - 1, index, -1)
-                    if truthy(rows[candidate_index].get("move_any"))
-                ),
-                None,
-            )
+            current_row = rows[scan_index]
+            has_subway_poi = contains_keyword(current_row.get("poi"), "地铁站")
+            has_move = truthy(current_row.get("move_any"))
+
+            if has_subway_poi or has_move:
+                no_feature_streak = 0
+                if has_move:
+                    last_move = scan_index
+            else:
+                no_feature_streak += 1
+                if no_feature_streak >= 2:
+                    break
+
+            scan_index += 1
 
         if last_move is None:
             index += 1
             continue
 
-        end_poi = next(
+        range_end = last_move
+        b_index = next(
             (
                 candidate_index
-                for candidate_index in range(last_move, index - 1, -1)
-                if labels[candidate_index] == "" and contains_keyword(rows[candidate_index].get("poi"), "地铁站")
+                for candidate_index in range(range_end, index, -1)
+                if contains_keyword(rows[candidate_index].get("poi"), "地铁站")
             ),
             None,
         )
+        subway_poi_count = sum(
+            1
+            for candidate_index in range(index, range_end + 1)
+            if contains_keyword(rows[candidate_index].get("poi"), "地铁站")
+        )
+        range_start_time = parse_datetime_value(rows[index].get("time"))
+        range_end_time = parse_datetime_value(rows[range_end].get("time"))
+        exceeds_duration = (
+            range_start_time is not None
+            and range_end_time is not None
+            and (range_end_time - range_start_time).total_seconds() > 3 * 3600
+        )
+        has_cross_city = any(
+            truthy(rows[candidate_index].get("move_cross_city"))
+            for candidate_index in range(index, range_end + 1)
+        )
+        has_move_between = any(
+            truthy(rows[candidate_index].get("move_any"))
+            for candidate_index in range(index + 1, (b_index or index) + 1)
+        )
 
-        has_move_between = any(truthy(rows[candidate_index].get("move_any")) for candidate_index in range(index + 1, last_move + 1))
-        if end_poi is None or end_poi == index or not has_move_between:
-            index += 1
+        if b_index is None or b_index == index or subway_poi_count < 2 or exceeds_duration or has_cross_city or not has_move_between:
+            index = range_end + 1
             continue
 
         labels[index] = SUBWAY_START_LABEL
-        if labels[end_poi] == "":
-            labels[end_poi] = SUBWAY_END_LABEL
-
-        for label_index in range(index + 1, last_move + 1):
-            if label_index == end_poi:
-                continue
-            if labels[label_index] == "" and truthy(rows[label_index].get("move_any")):
+        for label_index in range(index + 1, b_index):
+            if labels[label_index] == "":
                 labels[label_index] = SUBWAY_TRAVEL_LABEL
 
-        index = last_move + 1
+        if labels[b_index] == "":
+            labels[b_index] = SUBWAY_END_LABEL
+
+        index = range_end + 1
 
     return user_df.with_columns(pl.Series(SCENE_LABEL_COLUMN, labels))
 
