@@ -8,8 +8,8 @@ import polars as pl
 from tqdm import tqdm
 
 
-INPUT_PATH = Path("out.csv")
-OUTPUT_PATH = Path("scene_out.csv")
+INPUT_PATH = Path("a.csv")
+OUTPUT_PATH = Path("a_label.csv")
 CHUNK_SIZE = 100_000
 TIME_FORMAT = "%Y/%m/%d %H:%M"
 SCENE_LABEL_COLUMN = "scene_label"
