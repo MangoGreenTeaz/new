@@ -1,4 +1,5 @@
 import math
+from datetime import datetime, time as dt_time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -10,6 +11,7 @@ from tqdm import tqdm
 INPUT_PATH = Path("out.csv")
 OUTPUT_PATH = Path("scene_out.csv")
 CHUNK_SIZE = 100_000
+TIME_FORMAT = "%Y/%m/%d %H:%M"
 SCENE_LABEL_COLUMN = "scene_label"
 REQUIRED_COLUMNS = [
     "time",
@@ -88,6 +90,21 @@ def truthy(value: object) -> bool:
     return value is True
 
 
+def is_meal_time(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+
+    parsed_time = datetime.strptime(value, TIME_FORMAT).time()
+    return dt_time(11, 0) <= parsed_time <= dt_time(14, 0) or dt_time(17, 0) <= parsed_time <= dt_time(21, 0)
+
+
+def parse_datetime_value(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+
+    return datetime.strptime(value, TIME_FORMAT)
+
+
 def contains_keyword(value: object, keyword: str) -> bool:
     return isinstance(value, str) and keyword in value
 
@@ -122,6 +139,20 @@ def is_self_drive_related(row: dict[str, object]) -> bool:
     )
 
 
+def has_gap_exceeding(rows: list[dict[str, object]], threshold: int) -> bool:
+    for row in rows:
+        hours_since_prev = row.get("hours_since_prev")
+        if isinstance(hours_since_prev, int) and hours_since_prev > threshold:
+            return True
+
+    return False
+
+
+def row_gap_exceeds(row: dict[str, object], threshold: int) -> bool:
+    hours_since_prev = row.get("hours_since_prev")
+    return isinstance(hours_since_prev, int) and hours_since_prev > threshold
+
+
 def apply_travel_scene(
     user_df: pl.DataFrame,
     *,
@@ -133,6 +164,9 @@ def apply_travel_scene(
     travel_label: str,
     arrival_label: str,
     exit_label: str,
+    stop_hours_threshold: int | None = None,
+    max_range_length: int | None = None,
+    discard_on_gap_hours: int | None = None,
 ) -> pl.DataFrame:
     if user_df.height == 0:
         return user_df
@@ -159,6 +193,14 @@ def apply_travel_scene(
                 break
 
             row = rows[scan_index]
+            hours_since_prev = row.get("hours_since_prev")
+            if (
+                stop_hours_threshold is not None
+                and scan_index > start_index
+                and isinstance(hours_since_prev, int)
+                and hours_since_prev > stop_hours_threshold
+            ):
+                break
             if contains_keyword(row.get("poi"), exclude_keyword):
                 has_excluded_poi = True
             if truthy(row.get("move_cross_city")):
@@ -176,7 +218,16 @@ def apply_travel_scene(
 
         end_index = last_related_index
 
+        range_rows = rows[start_index : end_index + 1]
+        range_length = end_index - start_index + 1
+
         if has_excluded_poi or not has_cross_city:
+            index = end_index + 1
+            continue
+        if max_range_length is not None and range_length > max_range_length:
+            index = end_index + 1
+            continue
+        if discard_on_gap_hours is not None and has_gap_exceeding(range_rows, discard_on_gap_hours):
             index = end_index + 1
             continue
 
@@ -252,6 +303,7 @@ def process_high_speed_rail_scene(user_df: pl.DataFrame) -> pl.DataFrame:
         travel_label=TRAIN_TRAVEL_LABEL,
         arrival_label=TRAIN_ARRIVAL_LABEL,
         exit_label=TRAIN_EXIT_LABEL,
+        stop_hours_threshold=12,
     )
 
 
@@ -266,6 +318,8 @@ def process_airport_scene(user_df: pl.DataFrame) -> pl.DataFrame:
         travel_label=AIR_TRAVEL_LABEL,
         arrival_label=AIR_ARRIVAL_LABEL,
         exit_label=AIR_EXIT_LABEL,
+        max_range_length=15,
+        discard_on_gap_hours=12,
     )
 
 
@@ -291,8 +345,6 @@ def has_nearby_fast_move(rows: list[dict[str, object]], current_index: int) -> b
     end_index = min(len(rows), current_index + 4)
 
     for neighbor_index in range(start_index, end_index):
-        if neighbor_index == current_index:
-            continue
         if truthy(rows[neighbor_index].get("move_fast")):
             return True
 
@@ -311,6 +363,9 @@ def find_self_drive_boundary(
 
     while 0 <= scan_index < len(rows):
         if scan_index != anchor_index and labels[scan_index] != "":
+            break
+        hours_since_prev = rows[scan_index].get("hours_since_prev")
+        if scan_index != anchor_index and isinstance(hours_since_prev, int) and hours_since_prev > 3:
             break
 
         if is_self_drive_related(rows[scan_index]):
@@ -478,7 +533,7 @@ def process_tourism_scene(user_df: pl.DataFrame) -> pl.DataFrame:
             if labels[label_index] != "":
                 continue
             current_row = rows[label_index]
-            if contains_keyword(current_row.get("poi"), "餐厅") and not truthy(current_row.get("move_any")):
+            if contains_keyword(current_row.get("poi"), "餐厅") and not truthy(current_row.get("move_any")) and is_meal_time(current_row.get("time")):
                 labels[label_index] = TOURISM_DINING_LABEL
                 continue
 
@@ -511,19 +566,25 @@ def process_hotel_scene(user_df: pl.DataFrame) -> pl.DataFrame:
 
         start_index = index
         last_hotel_index = index
+        hotel_poi_count = 0
         unrelated_streak = 0
         scan_index = index
 
         while scan_index < row_count:
             if contains_keyword(rows[scan_index].get("poi"), "酒店旅馆"):
                 last_hotel_index = scan_index
+                hotel_poi_count += 1
                 unrelated_streak = 0
             else:
                 unrelated_streak += 1
-                if unrelated_streak >= 30:
+                if unrelated_streak >= 5:
                     break
 
             scan_index += 1
+
+        if hotel_poi_count <= 1:
+            index = last_hotel_index + 1
+            continue
 
         first_hotel_labeled = False
         for label_index in range(start_index, last_hotel_index + 1):
@@ -601,90 +662,110 @@ def process_cultural_venue_scene(user_df: pl.DataFrame) -> pl.DataFrame:
     return user_df.with_columns(pl.Series(SCENE_LABEL_COLUMN, labels))
 
 
-def process_shopping_scene(user_df: pl.DataFrame) -> pl.DataFrame:
-    if user_df.height == 0:
-        return user_df
-
-    rows = user_df.to_dicts()
-    labels = [str(row.get(SCENE_LABEL_COLUMN) or "") for row in rows]
-
-    for index, row in enumerate(rows):
-        if labels[index] != "":
-            continue
-        if truthy(row.get("time_early_morning")):
-            continue
-        if not contains_any_keyword(row.get("poi"), SHOPPING_POI_KEYWORDS):
-            continue
-        if not truthy(row.get("move_any")):
-            continue
-
-        start_index = max(0, index - 3)
-        end_index = min(len(rows), index + 4)
-        has_travel_app_nearby = any(
-            truthy(rows[neighbor_index].get("app_travel"))
-            for neighbor_index in range(start_index, end_index)
-        )
-        if not has_travel_app_nearby:
-            continue
-
-        nearby_count = sum(
-            1
-            for neighbor_index in range(start_index, end_index)
-            if neighbor_index != index and contains_any_keyword(rows[neighbor_index].get("poi"), SHOPPING_POI_KEYWORDS)
-        )
-        if nearby_count >= 1:
-            labels[index] = SHOPPING_LABEL
-
-    return user_df.with_columns(pl.Series(SCENE_LABEL_COLUMN, labels))
-
-
-def apply_density_poi_scene(
+def apply_range_poi_scene(
     user_df: pl.DataFrame,
     *,
     poi_keywords: list[str],
     label_value: str,
-    window_radius: int = 5,
+    allow_app_feature: bool = False,
 ) -> pl.DataFrame:
     if user_df.height == 0:
         return user_df
 
     rows = user_df.to_dicts()
     labels = [str(row.get(SCENE_LABEL_COLUMN) or "") for row in rows]
+    row_count = len(rows)
+    index = 0
 
-    for index, row in enumerate(rows):
+    while index < row_count:
+        row = rows[index]
         if labels[index] != "":
+            index += 1
             continue
         if truthy(row.get("time_early_morning")):
+            index += 1
             continue
         if not contains_any_keyword(row.get("poi"), poi_keywords):
+            index += 1
             continue
 
-        start_index = max(0, index - window_radius)
-        end_index = min(len(rows), index + window_radius + 1)
-        has_consecutive = has_consecutive_category_poi(rows, start_index, end_index, poi_keywords)
-        poi_count = count_category_poi(rows, start_index, end_index, poi_keywords)
+        start_index = index
+        last_related_index = index
+        unrelated_streak = 0
+        scan_index = index
 
-        if has_consecutive or poi_count >= 3:
-            labels[index] = label_value
+        while scan_index < row_count:
+            if labels[scan_index] != "" and scan_index != start_index:
+                break
+            current_row = rows[scan_index]
+            has_related_poi = contains_any_keyword(current_row.get("poi"), poi_keywords)
+            has_related_app = allow_app_feature and truthy(current_row.get("app_travel"))
+
+            if has_related_poi or has_related_app:
+                last_related_index = scan_index
+                unrelated_streak = 0
+            else:
+                unrelated_streak += 1
+                if unrelated_streak >= 3:
+                    break
+
+            scan_index += 1
+
+        range_rows = rows[start_index : last_related_index + 1]
+        poi_count = sum(1 for scene_row in range_rows if contains_any_keyword(scene_row.get("poi"), poi_keywords))
+        has_consecutive = has_consecutive_category_poi(rows, start_index, last_related_index + 1, poi_keywords)
+
+        range_start_time = parse_datetime_value(rows[start_index].get("time"))
+        range_end_time = parse_datetime_value(rows[last_related_index].get("time"))
+        exceeds_duration = (
+            range_start_time is not None
+            and range_end_time is not None
+            and (range_end_time - range_start_time).total_seconds() > 12 * 3600
+        )
+
+        has_required_app = True
+        if allow_app_feature:
+            has_required_app = any(truthy(scene_row.get("app_travel")) for scene_row in range_rows)
+
+        if not has_consecutive or poi_count < 3 or exceeds_duration or not has_required_app:
+            index = last_related_index + 1
+            continue
+
+        for label_index in range(start_index, last_related_index + 1):
+            if labels[label_index] != "":
+                continue
+            if truthy(rows[label_index].get("time_early_morning")):
+                continue
+            if contains_any_keyword(rows[label_index].get("poi"), poi_keywords):
+                labels[label_index] = label_value
+
+        index = last_related_index + 1
 
     return user_df.with_columns(pl.Series(SCENE_LABEL_COLUMN, labels))
 
 
 def process_outdoor_sports_scene(user_df: pl.DataFrame) -> pl.DataFrame:
-    return apply_density_poi_scene(
+    return apply_range_poi_scene(
         user_df,
         poi_keywords=OUTDOOR_SPORTS_POI_KEYWORDS,
         label_value=OUTDOOR_SPORTS_LABEL,
-        window_radius=3,
     )
 
 
 def process_family_fun_scene(user_df: pl.DataFrame) -> pl.DataFrame:
-    return apply_density_poi_scene(
+    return apply_range_poi_scene(
         user_df,
         poi_keywords=FAMILY_FUN_POI_KEYWORDS,
         label_value=FAMILY_FUN_LABEL,
-        window_radius=3,
+    )
+
+
+def process_shopping_scene(user_df: pl.DataFrame) -> pl.DataFrame:
+    return apply_range_poi_scene(
+        user_df,
+        poi_keywords=SHOPPING_POI_KEYWORDS,
+        label_value=SHOPPING_LABEL,
+        allow_app_feature=True,
     )
 
 
@@ -716,6 +797,15 @@ def process_ride_hailing_scene(user_df: pl.DataFrame) -> pl.DataFrame:
             ),
             row_count,
         )
+        next_gap_index = next(
+            (
+                candidate_index
+                for candidate_index in range(index + 1, next_labeled_index)
+                if row_gap_exceeds(rows[candidate_index], 3)
+            ),
+            next_labeled_index,
+        )
+        next_labeled_index = min(next_labeled_index, next_gap_index)
         window_end = min(index + 6, next_labeled_index)
         if not any(truthy(rows[candidate_index].get("move_any")) for candidate_index in range(index + 1, window_end)):
             index += 1
@@ -985,52 +1075,52 @@ def build_scene_rules() -> list[SceneRule]:
             processor=process_worker_rest_scene,
         ),
         SceneRule(
-            name="tourism",
+            name="subway_travel",
             priority=50,
+            description="地铁出行场景：从地铁站且未移动的起点开始，结合高速移动窗口和双非移动停止信号识别地铁行程。",
+            processor=process_subway_scene,
+        ),
+        SceneRule(
+            name="tourism",
+            priority=60,
             description="旅游场景：基于旅游景点POI、旅游app、移动和凌晨边界识别旅游参观与中途休息。",
             processor=process_tourism_scene,
         ),
         SceneRule(
             name="hotel_stay",
-            priority=60,
+            priority=70,
             description="酒店场景：基于酒店旅馆POI和邻近旅游上下文标注办理入住与住宿休息。",
             processor=process_hotel_scene,
         ),
         SceneRule(
             name="cultural_venue_visit",
-            priority=70,
+            priority=80,
             description="文化场馆参观：当前行为文化场馆POI，且前后五条满足连续或累计密度要求。",
             processor=process_cultural_venue_scene,
         ),
         SceneRule(
             name="shopping",
-            priority=80,
+            priority=90,
             description="逛街：当前行为购物类POI且有移动，前后各三条邻近记录中至少再出现一次同类POI。",
             processor=process_shopping_scene,
         ),
         SceneRule(
             name="outdoor_sports",
-            priority=90,
+            priority=100,
             description="户外运动：当前行为户外运动类POI，且前后五条满足连续两条或累计三次以上同类POI。",
             processor=process_outdoor_sports_scene,
         ),
         SceneRule(
             name="family_fun",
-            priority=100,
+            priority=110,
             description="亲子游玩：当前行为亲子游玩类POI，且前后五条满足连续两条或累计三次以上同类POI。",
             processor=process_family_fun_scene,
         ),
         SceneRule(
             name="ride_hailing_passenger",
-            priority=110,
+            priority=120,
             description="网约车乘客出行：从网约车关键词且未移动的起点开始，识别等待、乘坐和到达阶段。",
             processor=process_ride_hailing_scene,
-        ),
-        SceneRule(
-            name="subway_travel",
-            priority=120,
-            description="地铁出行场景：从地铁站且未移动的起点开始，结合高速移动窗口和双非移动停止信号识别地铁行程。",
-            processor=process_subway_scene,
         ),
         SceneRule(
             name="self_drive",

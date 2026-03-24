@@ -21,32 +21,40 @@
 3. `text`
 4. `city`
 5. `poi`
-6. `app_travel`
-7. `app_takeaway`
-8. `app_goods`
-9. `app_driver`
-10. `app_work`
-11. `app_map`
-12. `app_ticket`
-13. `app_ride_hailing`
-14. `move_any`
-15. `move_fast`
-16. `move_cross_city`
-17. `time_early_morning`
-18. `time_morning`
-19. `time_afternoon`
-20. `time_night`
+6. `hours_since_prev`
+7. `app_travel`
+8. `app_takeaway`
+9. `app_goods`
+10. `app_driver`
+11. `app_work`
+12. `app_map`
+13. `app_ticket`
+14. `app_ride_hailing`
+15. `move_any`
+16. `move_fast`
+17. `move_cross_city`
+18. `time_early_morning`
+19. `time_morning`
+20. `time_afternoon`
+21. `time_night`
 
 ## 通用规则
 
 - 输入数据要求包含 `time`、`udid`、`text` 三列。
 - `time`、`udid`、`text` 为原始保留列。
 - `city` 和 `poi` 为从 `text` 中提取的文本列。
+- `hours_since_prev` 为同一 `udid` 内当前记录与上一条记录的时间差（单位：小时，取整小时）。
 - 其余新增特征列均为布尔列，输出值为 `true` 或 `false`。
 - 当 `text` 为空或为 null 时：
   - `city` 为空字符串 `""`
   - `poi` 为空字符串 `""`
   - 所有布尔特征列均为 `false`
+- `hours_since_prev` 的计算规则：
+  - 按 `udid` 分组
+  - 每个 `udid` 的第一条记录为 `0`
+  - 使用当前条 `time` 与上一条 `time` 的差值，单位为小时
+  - 仅保留整小时部分，不足 1 小时记为 `0`
+  - `time` 格式为 `YYYY/MM/DD HH:MM`，例如 `2026/01/05 22:35`
 - 关键词匹配规则均为“包含即命中”。
 - 同一条记录可以同时命中多个特征列。
 
@@ -59,6 +67,7 @@
 | `text` | 字符串 | 原始文本字段 | 直接保留输入数据中的 `text` |
 | `city` | 字符串 | 城市特征 | 从 `text` 中提取 `城市：` 与中文逗号 `，` 之间的内容；提取不到时为空字符串 |
 | `poi` | 字符串 | POI 列表特征 | 从 `text` 中提取 `POI：` 与中文逗号 `，` 之间的内容；提取不到时为空字符串 |
+| `hours_since_prev` | 整数 | 当前记录与同一 `udid` 上一条记录的时间差（小时） | 按 `udid` 分组计算；第一条为 `0`；按 `time` 差值取整小时，不足 1 小时为 `0` |
 | `app_travel` | 布尔 | 是否包含出行/旅游相关应用关键词 | `text` 包含任一关键词：`同程旅行`、`携程旅行`、`去哪儿旅行`、`华住会`、`飞猪旅行`、`美团` |
 | `app_takeaway` | 布尔 | 是否包含跑腿/外卖骑手相关应用关键词 | `text` 包含任一关键词：`UU跑腿`、`美团众包`、`蜂鸟众包`、`达达骑士版`、`闪送员`、`美团骑手` |
 | `app_goods` | 布尔 | 是否包含货运/物流司机相关应用关键词 | `text` 包含任一关键词：`运满满司机`、`货拉拉司机版`、`陆运帮司机`、`满易运司机`、`成丰货运司机端`、`运盟司机端`、`中交智运司机版`、`货车帮司机`、`丰湃司机`、`新赤湾司机`、`美达司机端`、`润药司机端`、`梦驼铃司机帮`、`智通三千司机APP`、`狮桥司机`、`顺丰同城骑士`、`申行者`、`滴滴快递/货物配送司机`、`货拉拉专送司机` |
@@ -89,6 +98,7 @@
 | --- | --- |
 | `city` | `上海市` |
 | `poi` | `上海虹桥高铁站、地铁站、酒店旅馆` |
+| `hours_since_prev` | `0` |
 | `app_map` | `true` |
 | `app_ticket` | `true` |
 | `move_any` | `true` |
