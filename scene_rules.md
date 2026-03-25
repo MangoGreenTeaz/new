@@ -31,6 +31,7 @@
   - [上班通勤](#上班通勤)
   - [下班通勤](#下班通勤)
   - [行程规划](#行程规划)
+  - [出行无关场景](#出行无关场景)
 - [后续建议](#后续建议)
 
 代码中的场景规则以优先级顺序依次执行：
@@ -45,7 +46,7 @@
 - 输入文件默认值：`out.csv`
 - 输出文件默认值：`scene_out.csv`
 - 当前输出新增列：`scene_label`
-- 当前规则状态：已实现 `high_speed_rail`、`airport`、`self_drive`、`service_area_rest`、`fuel_charge_stop`、`parking_pickup_dropoff`、`tourism`、`hotel_stay`、`cultural_venue_visit`、`shopping`、`outdoor_sports`、`family_fun`、`ride_hailing_passenger`、`worker_active`、`worker_rest`、`subway_travel`、`commuting_to_work`、`commuting_home`、`trip_planning` 十九个场景
+- 当前规则状态：已实现 `high_speed_rail`、`airport`、`self_drive`、`service_area_rest`、`fuel_charge_stop`、`parking_pickup_dropoff`、`tourism`、`hotel_stay`、`cultural_venue_visit`、`shopping`、`outdoor_sports`、`family_fun`、`ride_hailing_passenger`、`worker_active`、`worker_rest`、`subway_travel`、`commuting_to_work`、`commuting_home`、`trip_planning`、`travel_irrelevant` 二十个场景
 
 ## 规则维护约定
 
@@ -68,7 +69,7 @@
 | 快递员/外卖员/网约车司机中途休息 | `快递员/外卖员/网约车司机中途休息` | 40 | 当前条未标注且无移动，前后各 5 条合计窗口中出现职业相关 App | `udid`, `time`, `app_takeaway`, `app_goods`, `app_driver`, `move_any` | 已实现 |
 | 地铁出行场景 | `抵达始发地铁站` / `乘坐地铁中` / `抵达终点地铁站` | 50 | 从地铁站且未移动的未标注记录出发，结合高速移动窗口和双非移动停止信号识别地铁行程 | `udid`, `time`, `poi`, `move_any`, `move_fast` | 已实现 |
 | 旅游 | `旅游中用餐` / `旅游参观` / `旅游中途休息` | 60 | 基于旅游景点 POI、旅游 app、移动特征和凌晨边界识别旅游范围；范围内先标餐厅用餐，再区分参观与休息 | `udid`, `time`, `poi`, `app_travel`, `move_any`, `time_early_morning` | 已实现 |
-| 酒店办理入住、旅游住宿休息 | `酒店办理入住` / `旅游住宿休息` | 70 | 从酒店旅馆 POI 锚点开始向后扫描，连续 5 条无酒店旅馆 POI 才停止；若范围内只有 1 条酒店 POI 则整段丢弃 | `udid`, `time`, `poi` | 已实现 |
+| 酒店办理入住、旅游住宿休息 | `酒店办理入住` / `旅游住宿休息` | 70 | 从酒店旅馆 POI 锚点开始向后扫描，连续 10 条无酒店旅馆 POI 才停止；若范围内仅 1 条酒店 POI，或出现跨城/高速移动/机场/高铁站/旅游景点/地图App/旅游App 任一特征则整段丢弃；首条酒店 POI 再根据候选范围前最近一次酒店 POI 的城市是否相同区分入住与住宿休息 | `udid`, `time`, `city`, `poi`, `move_cross_city`, `move_fast`, `app_map`, `app_travel` | 已实现 |
 | 文化场馆参观 | `文化场馆参观` | 80 | 当前条出现文化场馆大类 POI，且前后五条满足连续两条或累计三次以上文化场馆 POI | `udid`, `time`, `poi` | 已实现 |
 | 旅游中逛街 | `旅游中逛街` | 90 | 以购物类 POI 为锚点向后扫描范围，连续 3 条无购物 POI 或旅游 App 则停止；满足范围密度、时长和旅游 App 条件后，范围内购物 POI 记录标为旅游中逛街 | `udid`, `time`, `poi`, `app_travel`, `time_early_morning` | 已实现 |
 | 户外运动 | `户外运动` | 100 | 以户外运动类 POI 为锚点向后扫描范围，连续 3 条无相关 POI 则停止；满足范围密度和时长条件后，范围内相关 POI 记录标为户外运动 | `udid`, `time`, `poi`, `time_early_morning` | 已实现 |
@@ -81,6 +82,7 @@
 | 上班通勤 | `上班通勤` | 170 | 当前条未标注、出现工作类 App、存在移动且时间为上午 | `udid`, `time`, `app_work`, `move_any`, `time_morning` | 已实现 |
 | 下班通勤 | `下班通勤` | 180 | 当前条未标注、出现工作类 App、存在移动且时间为晚上 | `udid`, `time`, `app_work`, `move_any`, `time_night` | 已实现 |
 | 行程规划 | `行程规划` | 190 | 当前条为地图类 App 或票务类 App，并且最近 5 条记录内形成地图行为与票务行为的近邻组合 | `udid`, `time`, `app_map`, `app_ticket` | 已实现 |
+| 出行无关场景 | `出行无关场景` | 200 | 当前条及前后 5 条窗口必须全部未标注，且窗口内不出现指定交通/旅游相关 POI、不出现跨城或高速移动、也不出现旅游/地图/票务 App | `udid`, `time`, `poi`, `move_cross_city`, `move_fast`, `app_travel`, `app_map`, `app_ticket` | 已实现 |
 
 ## 推荐补充方式
 
@@ -323,16 +325,26 @@
 - 在同一用户内按时间顺序扫描
 - 第一次扫描到 `poi` 包含 `酒店旅馆` 的记录，作为锚点，也是场景范围第一条
 - 从锚点继续向后扫描
-- 若连续 5 条记录都不包含 `酒店旅馆` POI，则停止扫描
+- 若连续 10 条记录都不包含 `酒店旅馆` POI，则停止扫描
 - 场景范围最后一条取“最后一条仍包含 `酒店旅馆` POI 的记录”
 
 #### 场景丢弃条件
 
 - 若最终范围内仅有 1 条记录包含 `酒店旅馆` POI，则整个酒店场景范围丢弃，不进行标注
+- 若最终范围内任意记录满足以下任一特征，则整个酒店场景范围丢弃，不进行标注：
+  - `move_cross_city == true`
+  - `move_fast == true`
+  - `poi` 包含 `机场`
+  - `poi` 包含 `高铁站`
+  - `poi` 包含 `旅游景点`
+  - `app_map == true`
+  - `app_travel == true`
 
 #### 标注规则
 
-- 在该范围内，第一条包含 `酒店旅馆` POI 的记录标记为 `酒店办理入住`
+- 在该范围内，第一条包含 `酒店旅馆` POI 的记录，需要先向上扫描当前候选范围之前、同一用户历史中最近一条包含 `酒店旅馆` POI 的记录：
+  - 若存在该历史记录，且其 `city` 与当前第一条酒店 POI 的 `city` 相同，则标记为 `旅游住宿休息`
+  - 否则标记为 `酒店办理入住`
 - 范围内其余包含 `酒店旅馆` POI 的记录标记为 `旅游住宿休息`
 - 若范围内某条记录已经有其他场景标签，则该条跳过，不重复标注
 
@@ -580,6 +592,39 @@
 #### 标注结果
 
 - 满足条件时，当前记录标记为 `行程规划`
+
+### 出行无关场景
+
+#### 判定窗口
+
+- 当前记录作为中心
+- 取同一用户内前 5 条、当前条、后 5 条这些实际存在的记录作为窗口
+
+#### 判定条件
+
+- 当前记录本身未标注
+- 该窗口中的所有记录都必须未标注
+- 该窗口内任意记录的 `poi` 都不得包含以下任一关键词：
+  - `高铁站`
+  - `机场`
+  - `加油站`
+  - `电动车充电站`
+  - `服务区`
+  - `停车场`
+  - `旅游景点`
+  - `酒店旅馆`
+  - `地铁站`
+- 该窗口内任意记录都不得满足以下任一移动特征：
+  - `move_cross_city == true`
+  - `move_fast == true`
+- 该窗口内任意记录都不得满足以下任一 App 特征：
+  - `app_travel == true`
+  - `app_map == true`
+  - `app_ticket == true`
+
+#### 标注结果
+
+- 满足条件时，仅当前记录标记为 `出行无关场景`
 
 ## 后续建议
 

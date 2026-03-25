@@ -76,6 +76,18 @@ SUBWAY_END_LABEL = "抵达终点地铁站"
 COMMUTE_TO_WORK_LABEL = "上班通勤"
 COMMUTE_HOME_LABEL = "下班通勤"
 TRIP_PLANNING_LABEL = "行程规划"
+TRAVEL_IRRELEVANT_LABEL = "出行无关场景"
+TRAVEL_IRRELEVANT_POI_KEYWORDS = [
+    "高铁站",
+    "机场",
+    "加油站",
+    "电动车充电站",
+    "服务区",
+    "停车场",
+    "旅游景点",
+    "酒店旅馆",
+    "地铁站",
+]
 
 
 @dataclass(frozen=True)
@@ -577,15 +589,36 @@ def process_hotel_scene(user_df: pl.DataFrame) -> pl.DataFrame:
                 unrelated_streak = 0
             else:
                 unrelated_streak += 1
-                if unrelated_streak >= 5:
+                if unrelated_streak >= 10:
                     break
 
             scan_index += 1
 
-        if hotel_poi_count <= 1:
+        range_rows = rows[start_index : last_hotel_index + 1]
+        has_discard_feature = any(
+            truthy(scene_row.get("move_cross_city"))
+            or truthy(scene_row.get("move_fast"))
+            or contains_keyword(scene_row.get("poi"), "机场")
+            or contains_keyword(scene_row.get("poi"), "高铁站")
+            or contains_keyword(scene_row.get("poi"), "旅游景点")
+            or truthy(scene_row.get("app_map"))
+            or truthy(scene_row.get("app_travel"))
+            for scene_row in range_rows
+        )
+
+        if hotel_poi_count <= 1 or has_discard_feature:
             index = last_hotel_index + 1
             continue
 
+        previous_hotel_city = next(
+            (
+                rows[previous_index].get("city")
+                for previous_index in range(start_index - 1, -1, -1)
+                if contains_keyword(rows[previous_index].get("poi"), "酒店旅馆")
+            ),
+            None,
+        )
+        first_hotel_city = rows[start_index].get("city")
         first_hotel_labeled = False
         for label_index in range(start_index, last_hotel_index + 1):
             if not contains_keyword(rows[label_index].get("poi"), "酒店旅馆"):
@@ -594,7 +627,10 @@ def process_hotel_scene(user_df: pl.DataFrame) -> pl.DataFrame:
                 continue
 
             if not first_hotel_labeled:
-                labels[label_index] = HOTEL_CHECKIN_LABEL
+                if isinstance(previous_hotel_city, str) and previous_hotel_city != "" and previous_hotel_city == first_hotel_city:
+                    labels[label_index] = HOTEL_REST_LABEL
+                else:
+                    labels[label_index] = HOTEL_CHECKIN_LABEL
                 first_hotel_labeled = True
             else:
                 labels[label_index] = HOTEL_REST_LABEL
@@ -1051,6 +1087,48 @@ def process_trip_planning_scene(user_df: pl.DataFrame) -> pl.DataFrame:
     return user_df.with_columns(pl.Series(SCENE_LABEL_COLUMN, labels))
 
 
+def process_travel_irrelevant_scene(user_df: pl.DataFrame) -> pl.DataFrame:
+    if user_df.height == 0:
+        return user_df
+
+    rows = user_df.to_dicts()
+    initial_labels = [str(row.get(SCENE_LABEL_COLUMN) or "") for row in rows]
+    labels = initial_labels.copy()
+
+    for index, row in enumerate(rows):
+        if initial_labels[index] != "":
+            continue
+
+        start_index = max(0, index - 5)
+        end_index = min(len(rows), index + 6)
+        window_rows = rows[start_index:end_index]
+        window_labels = initial_labels[start_index:end_index]
+
+        if any(label != "" for label in window_labels):
+            continue
+        if any(
+            contains_any_keyword(window_row.get("poi"), TRAVEL_IRRELEVANT_POI_KEYWORDS)
+            for window_row in window_rows
+        ):
+            continue
+        if any(
+            truthy(window_row.get("move_cross_city")) or truthy(window_row.get("move_fast"))
+            for window_row in window_rows
+        ):
+            continue
+        if any(
+            truthy(window_row.get("app_travel"))
+            or truthy(window_row.get("app_map"))
+            or truthy(window_row.get("app_ticket"))
+            for window_row in window_rows
+        ):
+            continue
+
+        labels[index] = TRAVEL_IRRELEVANT_LABEL
+
+    return user_df.with_columns(pl.Series(SCENE_LABEL_COLUMN, labels))
+
+
 def build_scene_rules() -> list[SceneRule]:
     return [
         SceneRule(
@@ -1166,6 +1244,12 @@ def build_scene_rules() -> list[SceneRule]:
             priority=190,
             description="行程规划：地图类App与票务类App在最近五条记录内形成近邻组合。",
             processor=process_trip_planning_scene,
+        ),
+        SceneRule(
+            name="travel_irrelevant",
+            priority=200,
+            description="出行无关场景：当前条及前后五条均未标注，且窗口内不出现交通设施POI、跨城/高速移动和出行相关App。",
+            processor=process_travel_irrelevant_scene,
         )
     ]
 
