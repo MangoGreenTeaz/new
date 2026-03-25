@@ -9,7 +9,6 @@
   - [scene_label.py](#scene_labelpy)
   - [feature_output_schema.md](#feature_output_schemamd)
   - [scene_rules.md](#scene_rulesmd)
-- [已废弃文件](#已废弃文件)
 - [文档跳转](#文档跳转)
 
 ## 项目概览
@@ -67,20 +66,6 @@
 - 记录场景优先级、判定逻辑、依赖字段和标签含义
 
 快速跳转：[`scene_rules.md`](./scene_rules.md)
-
-## 已废弃文件
-
-以下文件为旧版本实现，现已废弃，不再作为当前流程的一部分使用：
-
-- `scene_rules_old.md`
-- `scene_label_old.py`
-
-请以当前文件为准：
-
-- `feature.py`
-- `scene_label.py`
-- `feature_output_schema.md`
-- `scene_rules.md`
 
 ## 文档跳转
 
