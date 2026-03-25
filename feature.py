@@ -78,7 +78,7 @@ TIME_FEATURES = {
     "time_night": "晚上",
 }
 
-REQUIRED_COLUMNS = ["time", "udid", "text"]
+REQUIRED_COLUMNS = ["time", "udid", "text", "context", "history_usage", "service_click"]
 CITY_PATTERN = r"城市：([^，]*)"
 POI_PATTERN = r"POI：([^，]*)"
 
@@ -120,6 +120,9 @@ def transform_batch(batch: pl.DataFrame) -> pl.DataFrame:
             pl.col("time"),
             pl.col("udid"),
             pl.col("text"),
+            pl.col("context"),
+            pl.col("history_usage"),
+            pl.col("service_click"),
             city_expr.alias("city"),
             poi_expr.alias("poi"),
             *feature_exprs,
@@ -149,9 +152,7 @@ def add_hour_gap(batch: pl.DataFrame) -> pl.DataFrame:
     )
 
     output_columns = [
-        "time",
-        "udid",
-        "text",
+        *REQUIRED_COLUMNS,
         "city",
         "poi",
         HOUR_GAP_COLUMN,
@@ -222,7 +223,7 @@ def process_csv(input_path: Path, output_path: Path, chunk_size: int) -> None:
         batch_size=chunk_size,
         columns=REQUIRED_COLUMNS,
         encoding="utf8",
-        schema_overrides={"time": pl.Utf8, "udid": pl.Utf8, "text": pl.Utf8},
+        schema_overrides={column: pl.Utf8 for column in REQUIRED_COLUMNS},
     )
 
     with output_path.open("w", encoding="utf-8", newline="") as outfile:

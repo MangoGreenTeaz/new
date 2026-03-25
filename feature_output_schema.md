@@ -1,6 +1,6 @@
 # `feature.py` 输出字段说明
 
-本文档说明 `feature.py` 处理后生成的 `out.csv` 的字段结构、字段含义和取值规则。
+本文档说明 `feature.py` 处理后生成的 `a_feature.csv` 的字段结构、字段含义和取值规则。
 
 返回上级说明：[`README.md`](./README.md)
 
@@ -19,29 +19,32 @@
 1. `time`
 2. `udid`
 3. `text`
-4. `city`
-5. `poi`
-6. `hours_since_prev`
-7. `app_travel`
-8. `app_takeaway`
-9. `app_goods`
-10. `app_driver`
-11. `app_work`
-12. `app_map`
-13. `app_ticket`
-14. `app_ride_hailing`
-15. `move_any`
-16. `move_fast`
-17. `move_cross_city`
-18. `time_early_morning`
-19. `time_morning`
-20. `time_afternoon`
-21. `time_night`
+4. `context`
+5. `history_usage`
+6. `service_click`
+7. `city`
+8. `poi`
+9. `hours_since_prev`
+10. `app_travel`
+11. `app_takeaway`
+12. `app_goods`
+13. `app_driver`
+14. `app_work`
+15. `app_map`
+16. `app_ticket`
+17. `app_ride_hailing`
+18. `move_any`
+19. `move_fast`
+20. `move_cross_city`
+21. `time_early_morning`
+22. `time_morning`
+23. `time_afternoon`
+24. `time_night`
 
 ## 通用规则
 
-- 输入数据要求包含 `time`、`udid`、`text` 三列。
-- `time`、`udid`、`text` 为原始保留列。
+- 输入数据要求包含 `time`、`udid`、`text`、`context`、`history_usage`、`service_click` 六列。
+- `time`、`udid`、`text`、`context`、`history_usage`、`service_click` 为原始保留列。
 - `city` 和 `poi` 为从 `text` 中提取的文本列。
 - `hours_since_prev` 为同一 `udid` 内当前记录与上一条记录的时间差（单位：小时，取整小时）。
 - 其余新增特征列均为布尔列，输出值为 `true` 或 `false`。
@@ -65,6 +68,9 @@
 | `time` | 字符串 | 原始时间字段 | 直接保留输入数据中的 `time` |
 | `udid` | 字符串 | 原始设备标识字段 | 直接保留输入数据中的 `udid` |
 | `text` | 字符串 | 原始文本字段 | 直接保留输入数据中的 `text` |
+| `context` | 字符串 | 上下文信息 | 直接保留输入数据中的 `context` |
+| `history_usage` | 字符串 | 历史使用信息 | 直接保留输入数据中的 `history_usage` |
+| `service_click` | 字符串 | 服务点击信息 | 直接保留输入数据中的 `service_click` |
 | `city` | 字符串 | 城市特征 | 从 `text` 中提取 `城市：` 与中文逗号 `，` 之间的内容；提取不到时为空字符串 |
 | `poi` | 字符串 | POI 列表特征 | 从 `text` 中提取 `POI：` 与中文逗号 `，` 之间的内容；提取不到时为空字符串 |
 | `hours_since_prev` | 整数 | 当前记录与同一 `udid` 上一条记录的时间差（小时） | 按 `udid` 分组计算；第一条为 `0`；按 `time` 差值取整小时，不足 1 小时为 `0` |
