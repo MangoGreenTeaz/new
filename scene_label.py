@@ -17,6 +17,9 @@ REQUIRED_COLUMNS = [
     "time",
     "udid",
     "text",
+    "context",
+    "history_usage",
+    "service_click",
     "city",
     "poi",
     "app_takeaway",
@@ -34,7 +37,15 @@ REQUIRED_COLUMNS = [
     "time_morning",
     "time_night",
 ]
-CORE_OUTPUT_COLUMNS = ["time", "udid", "text", SCENE_LABEL_COLUMN]
+CORE_OUTPUT_COLUMNS = [
+    "time",
+    "udid",
+    "text",
+    SCENE_LABEL_COLUMN,
+    "context",
+    "history_usage",
+    "service_click",
+]
 SAVE_ALL_COLUMNS = False
 TRAIN_START_LABEL = "抵达始发高铁站"
 TRAIN_WAITING_LABEL = "高铁站候车"
