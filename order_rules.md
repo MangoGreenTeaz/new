@@ -22,7 +22,7 @@
 - 脚本文件：`order.py`
 - 输入文件默认值：`a_label.csv`（`scene_label.py` 的输出）
 - 输出文件默认值：`a_order.csv`
-- 输出列：`time`, `udid`, `text`, `scene_label`, `order`
+- 输出列：`time`, `udid`, `text`, `scene_label`, `context`, `history_usage`, `service_click`, `order`
 - 随机种子：`42`（固定，保证可复现）
 - 当前支持订单类型：高铁（火车）、飞机
 - 分块大小：`100,000` 行

@@ -61,6 +61,7 @@
 
 - 读取 `scene_label.py` 输出的场景标注数据
 - 从高铁和飞机场景中提取订单信息（出发/到达时间、出发/到达城市）
+- 保留 `context`、`history_usage`、`service_click` 原始上下文列
 - 生成结构化的 `order` 字段
 
 配套说明文档：[`order_rules.md`](./order_rules.md)

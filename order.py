@@ -19,7 +19,7 @@ MAX_OFFSET_MINUTES = 5
 MAX_GAP_HOURS = 12
 
 ORDER_COLUMN = "order"
-OUTPUT_COLUMNS = ["time", "udid", "text", "scene_label", ORDER_COLUMN]
+OUTPUT_COLUMNS = ["time", "udid", "text", "scene_label", "context", "history_usage", "service_click", ORDER_COLUMN]
 REQUIRED_COLUMNS = ["time", "udid", "text", "scene_label"]
 
 CITY_PATTERN = re.compile(r"城市：([^，,]+)")
