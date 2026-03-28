@@ -42,6 +42,7 @@ CORE_OUTPUT_COLUMNS = [
     "udid",
     "text",
     SCENE_LABEL_COLUMN,
+    "city",
     "context",
     "history_usage",
     "service_click",
