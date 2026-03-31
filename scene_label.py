@@ -75,7 +75,7 @@ CULTURAL_POI_KEYWORDS = ["博物馆", "戏剧", "宗教场所", "图书馆"]
 SHOPPING_POI_KEYWORDS = ["购物中心", "店铺", "市场", "购物", "便利店", "娱乐/夜生活"]
 OUTDOOR_SPORTS_LABEL = "户外运动"
 FAMILY_FUN_LABEL = "亲子游玩"
-OUTDOOR_SPORTS_POI_KEYWORDS = ["公园及休憩用地", "体育场", "体育中心", "水上运动中心", "露营地", "高尔夫球场", "游泳馆"]
+OUTDOOR_SPORTS_POI_KEYWORDS = ["体育场", "体育中心", "水上运动中心", "露营地", "高尔夫球场", "游泳馆"]
 FAMILY_FUN_POI_KEYWORDS = ["游乐园", "动植物园", "公园及休憩用地"]
 RIDE_HAIL_WAIT_LABEL = "等待网约车"
 RIDE_HAIL_TRAVEL_LABEL = "乘坐网约车行程中"
@@ -97,6 +97,25 @@ TRAVEL_IRRELEVANT_POI_KEYWORDS = [
     "旅游景点",
     "酒店旅馆",
     "地铁站",
+    "游乐园",
+    "动植物园",
+    "公园及休憩用地",
+    "体育场",
+    "体育中心",
+    "水上运动中心",
+    "露营地",
+    "高尔夫球场",
+    "游泳馆",
+    "博物馆",
+    "戏剧",
+    "宗教场所",
+    "图书馆",
+    "购物中心",
+    "店铺",
+    "市场",
+    "购物",
+    "便利店",
+    "娱乐/夜生活",
 ]
 
 
@@ -427,7 +446,13 @@ def process_self_drive_scene(user_df: pl.DataFrame) -> pl.DataFrame:
             index = end_index + 1
             continue
         if any(
-            contains_keyword(scene_row.get("poi"), "高铁站") or contains_keyword(scene_row.get("poi"), "机场")
+            contains_keyword(scene_row.get("poi"), "地铁")
+            or contains_keyword(scene_row.get("poi"), "机场")
+            or contains_keyword(scene_row.get("poi"), "高铁站")
+            or contains_keyword(scene_row.get("poi"), "旅游景点")
+            or truthy(scene_row.get("app_ticket"))
+            or truthy(scene_row.get("app_ride_hailing"))
+            or truthy(scene_row.get("app_work"))
             for scene_row in scene_rows
         ):
             index = end_index + 1
@@ -605,18 +630,24 @@ def process_hotel_scene(user_df: pl.DataFrame) -> pl.DataFrame:
             scan_index += 1
 
         range_rows = rows[start_index : last_hotel_index + 1]
+        has_consecutive_hotel_poi = has_consecutive_category_poi(rows, start_index, last_hotel_index + 1, ["酒店旅馆"])
         has_discard_feature = any(
             truthy(scene_row.get("move_cross_city"))
             or truthy(scene_row.get("move_fast"))
+            or contains_keyword(scene_row.get("poi"), "地铁")
             or contains_keyword(scene_row.get("poi"), "机场")
             or contains_keyword(scene_row.get("poi"), "高铁站")
             or contains_keyword(scene_row.get("poi"), "旅游景点")
-            or truthy(scene_row.get("app_map"))
-            or truthy(scene_row.get("app_travel"))
+            or contains_keyword(scene_row.get("poi"), "加油站")
+            or contains_keyword(scene_row.get("poi"), "电动车充电站")
+            or contains_keyword(scene_row.get("poi"), "服务区")
+            or truthy(scene_row.get("app_ticket"))
+            or truthy(scene_row.get("app_ride_hailing"))
+            or truthy(scene_row.get("app_work"))
             for scene_row in range_rows
         )
 
-        if hotel_poi_count <= 1 or has_discard_feature:
+        if (not has_consecutive_hotel_poi and hotel_poi_count < 3) or has_discard_feature:
             index = last_hotel_index + 1
             continue
 
@@ -682,30 +713,27 @@ def count_category_poi(
     )
 
 
-def process_cultural_venue_scene(user_df: pl.DataFrame) -> pl.DataFrame:
-    if user_df.height == 0:
-        return user_df
+def has_forbidden_features(
+    rows: list[dict[str, object]],
+    start_index: int,
+    end_index: int,
+    *,
+    poi_keywords: list[str],
+    app_fields: list[str],
+    forbid_move_fast: bool = False,
+    forbid_move_cross_city: bool = False,
+) -> bool:
+    for row in rows[start_index:end_index]:
+        if contains_any_keyword(row.get("poi"), poi_keywords):
+            return True
+        if any(truthy(row.get(app_field)) for app_field in app_fields):
+            return True
+        if forbid_move_fast and truthy(row.get("move_fast")):
+            return True
+        if forbid_move_cross_city and truthy(row.get("move_cross_city")):
+            return True
 
-    rows = user_df.to_dicts()
-    labels = [str(row.get(SCENE_LABEL_COLUMN) or "") for row in rows]
-
-    for index, row in enumerate(rows):
-        if labels[index] != "":
-            continue
-        if truthy(row.get("time_early_morning")):
-            continue
-        if not contains_any_keyword(row.get("poi"), CULTURAL_POI_KEYWORDS):
-            continue
-
-        start_index = max(0, index - 5)
-        end_index = min(len(rows), index + 6)
-        has_consecutive = has_consecutive_category_poi(rows, start_index, end_index, CULTURAL_POI_KEYWORDS)
-        poi_count = count_category_poi(rows, start_index, end_index, CULTURAL_POI_KEYWORDS)
-
-        if has_consecutive or poi_count >= 3:
-            labels[index] = VENUE_VISIT_LABEL
-
-    return user_df.with_columns(pl.Series(SCENE_LABEL_COLUMN, labels))
+    return False
 
 
 def apply_range_poi_scene(
@@ -714,6 +742,13 @@ def apply_range_poi_scene(
     poi_keywords: list[str],
     label_value: str,
     allow_app_feature: bool = False,
+    require_app_feature: bool = False,
+    discard_requires_both_density_failures: bool = False,
+    extended_range_backtrack: int = 0,
+    forbidden_poi_keywords: list[str] | None = None,
+    forbidden_app_fields: list[str] | None = None,
+    forbid_move_fast: bool = False,
+    forbid_move_cross_city: bool = False,
 ) -> pl.DataFrame:
     if user_df.height == 0:
         return user_df
@@ -770,10 +805,24 @@ def apply_range_poi_scene(
         )
 
         has_required_app = True
-        if allow_app_feature:
+        if require_app_feature:
             has_required_app = any(truthy(scene_row.get("app_travel")) for scene_row in range_rows)
 
-        if not has_consecutive or poi_count < 3 or exceeds_duration or not has_required_app:
+        density_invalid = (not has_consecutive and poi_count < 3) if discard_requires_both_density_failures else (not has_consecutive or poi_count < 3)
+        extended_start_index = max(0, start_index - extended_range_backtrack)
+        has_forbidden_feature = False
+        if forbidden_poi_keywords or forbidden_app_fields or forbid_move_fast or forbid_move_cross_city:
+            has_forbidden_feature = has_forbidden_features(
+                rows,
+                extended_start_index,
+                last_related_index + 1,
+                poi_keywords=forbidden_poi_keywords or [],
+                app_fields=forbidden_app_fields or [],
+                forbid_move_fast=forbid_move_fast,
+                forbid_move_cross_city=forbid_move_cross_city,
+            )
+
+        if density_invalid or exceeds_duration or not has_required_app or has_forbidden_feature:
             index = last_related_index + 1
             continue
 
@@ -790,11 +839,31 @@ def apply_range_poi_scene(
     return user_df.with_columns(pl.Series(SCENE_LABEL_COLUMN, labels))
 
 
+def process_cultural_venue_scene(user_df: pl.DataFrame) -> pl.DataFrame:
+    return apply_range_poi_scene(
+        user_df,
+        poi_keywords=CULTURAL_POI_KEYWORDS,
+        label_value=VENUE_VISIT_LABEL,
+        discard_requires_both_density_failures=True,
+        extended_range_backtrack=10,
+        forbidden_poi_keywords=["地铁", "机场", "高铁站", "酒店旅馆", "旅游景点", "加油站", "电动车充电站", "服务区"],
+        forbidden_app_fields=["app_travel", "app_ticket", "app_ride_hailing", "app_work", "app_map"],
+        forbid_move_fast=True,
+        forbid_move_cross_city=True,
+    )
+
+
 def process_outdoor_sports_scene(user_df: pl.DataFrame) -> pl.DataFrame:
     return apply_range_poi_scene(
         user_df,
         poi_keywords=OUTDOOR_SPORTS_POI_KEYWORDS,
         label_value=OUTDOOR_SPORTS_LABEL,
+        discard_requires_both_density_failures=True,
+        extended_range_backtrack=10,
+        forbidden_poi_keywords=["地铁", "机场", "高铁站", "酒店旅馆", "旅游景点", "加油站", "电动车充电站", "服务区"],
+        forbidden_app_fields=["app_travel", "app_ticket", "app_ride_hailing", "app_work", "app_map"],
+        forbid_move_fast=True,
+        forbid_move_cross_city=True,
     )
 
 
@@ -803,6 +872,12 @@ def process_family_fun_scene(user_df: pl.DataFrame) -> pl.DataFrame:
         user_df,
         poi_keywords=FAMILY_FUN_POI_KEYWORDS,
         label_value=FAMILY_FUN_LABEL,
+        discard_requires_both_density_failures=True,
+        extended_range_backtrack=10,
+        forbidden_poi_keywords=["地铁", "机场", "高铁站", "酒店旅馆", "旅游景点", "加油站", "电动车充电站", "服务区"],
+        forbidden_app_fields=["app_travel", "app_ticket", "app_ride_hailing", "app_work", "app_map"],
+        forbid_move_fast=True,
+        forbid_move_cross_city=True,
     )
 
 
@@ -812,6 +887,10 @@ def process_shopping_scene(user_df: pl.DataFrame) -> pl.DataFrame:
         poi_keywords=SHOPPING_POI_KEYWORDS,
         label_value=SHOPPING_LABEL,
         allow_app_feature=True,
+        discard_requires_both_density_failures=True,
+        extended_range_backtrack=10,
+        forbidden_poi_keywords=["地铁", "机场", "高铁站", "酒店旅馆", "旅游景点", "加油站", "电动车充电站", "服务区"],
+        forbidden_app_fields=["app_work"],
     )
 
 
@@ -1020,6 +1099,20 @@ def process_subway_scene(user_df: pl.DataFrame) -> pl.DataFrame:
     return user_df.with_columns(pl.Series(SCENE_LABEL_COLUMN, labels))
 
 
+def process_cultural_venue_scene(user_df: pl.DataFrame) -> pl.DataFrame:
+    return apply_range_poi_scene(
+        user_df,
+        poi_keywords=CULTURAL_POI_KEYWORDS,
+        label_value=VENUE_VISIT_LABEL,
+        discard_requires_both_density_failures=True,
+        extended_range_backtrack=10,
+        forbidden_poi_keywords=["地铁", "机场", "高铁站", "酒店旅馆", "旅游景点", "加油站", "电动车充电站", "服务区"],
+        forbidden_app_fields=["app_travel", "app_ticket", "app_ride_hailing", "app_work", "app_map"],
+        forbid_move_fast=True,
+        forbid_move_cross_city=True,
+    )
+
+
 def process_commuting_to_work_scene(user_df: pl.DataFrame) -> pl.DataFrame:
     if user_df.height == 0:
         return user_df
@@ -1085,6 +1178,24 @@ def process_trip_planning_scene(user_df: pl.DataFrame) -> pl.DataFrame:
         has_map_in_window = any(truthy(window_row.get("app_map")) for window_row in window_rows)
         has_ticket_in_window = any(truthy(window_row.get("app_ticket")) for window_row in window_rows)
 
+        if any(
+            contains_keyword(window_row.get("poi"), "机场")
+            or contains_keyword(window_row.get("poi"), "高铁站")
+            or contains_keyword(window_row.get("poi"), "酒店旅馆")
+            or contains_keyword(window_row.get("poi"), "旅游景点")
+            or contains_keyword(window_row.get("poi"), "加油站")
+            or contains_keyword(window_row.get("poi"), "电动车充电站")
+            or contains_keyword(window_row.get("poi"), "服务区")
+            for window_row in window_rows
+        ):
+            continue
+
+        if any(
+            truthy(window_row.get("move_fast")) or truthy(window_row.get("move_cross_city"))
+            for window_row in window_rows
+        ):
+            continue
+
         if (current_is_map and has_ticket_in_window) or (current_is_ticket and has_map_in_window):
             labels[index] = TRIP_PLANNING_LABEL
 
@@ -1103,8 +1214,8 @@ def process_travel_irrelevant_scene(user_df: pl.DataFrame) -> pl.DataFrame:
         if initial_labels[index] != "":
             continue
 
-        start_index = max(0, index - 5)
-        end_index = min(len(rows), index + 6)
+        start_index = max(0, index - 10)
+        end_index = index + 1
         window_rows = rows[start_index:end_index]
         window_labels = initial_labels[start_index:end_index]
 
