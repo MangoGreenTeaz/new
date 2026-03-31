@@ -41,7 +41,18 @@ FLIGHT_LABELS = {
     "离开终点机场",
 }
 
-ALL_ORDER_LABELS = TRAIN_LABELS | FLIGHT_LABELS
+HOTEL_LABELS = {
+    "酒店办理入住",
+    "旅游住宿休息",
+}
+
+TOURIST_LABELS = {
+    "旅游参观",
+    "旅游中途休息",
+    "旅游中用餐",
+}
+
+ALL_ORDER_LABELS = TRAIN_LABELS | FLIGHT_LABELS | HOTEL_LABELS | TOURIST_LABELS
 
 
 @dataclass(frozen=True)
@@ -56,6 +67,10 @@ def get_scene_type(label: str) -> str | None:
         return "train"
     if label in FLIGHT_LABELS:
         return "flight"
+    if label in HOTEL_LABELS:
+        return "hotel"
+    if label in TOURIST_LABELS:
+        return "tourist"
     return None
 
 
@@ -63,6 +78,8 @@ def build_order_rules() -> list[OrderRule]:
     return [
         OrderRule(name="train", labels=TRAIN_LABELS, builder=build_train_order),
         OrderRule(name="flight", labels=FLIGHT_LABELS, builder=build_flight_order),
+        OrderRule(name="hotel", labels=HOTEL_LABELS, builder=build_hotel_order),
+        OrderRule(name="tourist", labels=TOURIST_LABELS, builder=build_tourist_order),
     ]
 
 
@@ -119,6 +136,11 @@ def format_order(
         f"出发城市：{departure_city}，"
         f"到达城市：{arrival_city}"
     )
+
+
+def format_day_order(order_type: str, dt: datetime | None) -> str:
+    day_str = dt.strftime("%Y/%m/%d") if dt else ""
+    return f"订单类型：{order_type}，时间：{day_str}"
 
 
 def find_first_city(rows: list[dict], indices: list[int], field: str = "current_city") -> str | None:
@@ -245,6 +267,18 @@ def build_flight_order(rows: list[dict], rng: random.Random) -> str:
     return format_order("飞机", start_dt, end_dt, departure_city or "", arrival_city or "")
 
 
+def build_hotel_order(rows: list[dict], rng: random.Random) -> str:
+    del rng
+    start_dt = next((row.get("_parsed_time") for row in rows if row.get("_parsed_time") is not None), None)
+    return format_day_order("酒店", start_dt)
+
+
+def build_tourist_order(rows: list[dict], rng: random.Random) -> str:
+    del rng
+    start_dt = next((row.get("_parsed_time") for row in rows if row.get("_parsed_time") is not None), None)
+    return format_day_order("旅游", start_dt)
+
+
 def split_segments(
     rows: list[dict],
 ) -> list[list[dict]]:
@@ -282,6 +316,32 @@ def split_segments(
     return segments
 
 
+def split_segment_by_day(rows: list[dict]) -> list[list[dict]]:
+    if not rows:
+        return []
+
+    day_segments: list[list[dict]] = []
+    current_segment: list[dict] = [rows[0]]
+    prev_day = rows[0].get("_parsed_time").date() if rows[0].get("_parsed_time") is not None else None
+
+    for row in rows[1:]:
+        parsed_time = row.get("_parsed_time")
+        curr_day = parsed_time.date() if parsed_time is not None else prev_day
+
+        if curr_day != prev_day:
+            day_segments.append(current_segment)
+            current_segment = [row]
+        else:
+            current_segment.append(row)
+
+        prev_day = curr_day
+
+    if current_segment:
+        day_segments.append(current_segment)
+
+    return day_segments
+
+
 def enrich_rows(rows: list[dict]) -> None:
     for row in rows:
         row["_parsed_time"] = parse_time(row.get("time"))
@@ -304,6 +364,16 @@ def process_user_orders(user_rows: list[dict], rng: random.Random) -> None:
 
         rule = resolve_order_rule(segment[0].get("scene_label", ""), order_rules)
         if rule is None:
+            continue
+
+        if rule.name in {"hotel", "tourist"}:
+            day_segments = split_segment_by_day(segment)
+            for day_segment in day_segments:
+                if not day_segment:
+                    continue
+                order_str = rule.builder(day_segment, rng)
+                for row in day_segment:
+                    row[ORDER_COLUMN] = order_str
             continue
 
         order_str = rule.builder(segment, rng)
