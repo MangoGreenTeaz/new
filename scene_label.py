@@ -62,7 +62,6 @@ SELF_DRIVE_LABEL = "自驾途中"
 SELF_DRIVE_SERVICE_LABEL = "服务区休息"
 SELF_DRIVE_FUEL_LABEL = "驾驶途中加油、充电"
 SELF_DRIVE_PARKING_LABEL = "去停车场停车/取车"
-SELF_DRIVE_ARRIVAL_LABEL = "驾车抵达终点"
 SELF_DRIVE_POI_KEYWORDS = ["加油站", "电动车充电站", "服务区", "停车场"]
 TOURISM_VISIT_LABEL = "旅游参观"
 TOURISM_REST_LABEL = "旅游中途休息"
@@ -262,6 +261,11 @@ def apply_travel_scene(
         range_rows = rows[start_index : end_index + 1]
         range_length = end_index - start_index + 1
 
+        has_cross_city = any(
+            truthy(row.get("move_cross_city"))
+            for row in range_rows[1:]
+        )
+
         if has_excluded_poi or not has_cross_city:
             index = end_index + 1
             continue
@@ -305,6 +309,11 @@ def apply_travel_scene(
             )
 
         if c_index is None:
+            index = end_index + 1
+            continue
+
+        start_city = rows[start_index].get("city") or ""
+        if start_city == final_city:
             index = end_index + 1
             continue
 
@@ -370,7 +379,7 @@ def classify_self_drive_label(row: dict[str, object], is_last_row: bool) -> str:
     if is_last_row:
         if contains_keyword(poi_value, "停车场"):
             return SELF_DRIVE_PARKING_LABEL
-        return SELF_DRIVE_ARRIVAL_LABEL
+        return SELF_DRIVE_LABEL
 
     if contains_keyword(poi_value, "服务区"):
         return SELF_DRIVE_SERVICE_LABEL
@@ -1321,7 +1330,7 @@ def build_scene_rules() -> list[SceneRule]:
         SceneRule(
             name="self_drive",
             priority=130,
-            description="自驾场景：基于高速移动、跨城市与道路设施POI识别自驾范围，并按沿途活动优先级标注。",
+            description="自驾场景：基于高速移动、跨城市与道路设施POI识别自驾范围，并按沿途活动优先级标注；范围最后一条非停车场记录也标为自驾途中。",
             processor=process_self_drive_scene,
         ),
         SceneRule(
