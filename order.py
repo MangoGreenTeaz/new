@@ -10,9 +10,12 @@ import polars as pl
 from tqdm import tqdm
 
 
-INPUT_PATH = Path("a_label.csv")
-OUTPUT_PATH = Path("a_order.csv")
-CHUNK_SIZE = 100_000
+config = {
+    "input_file": "data_feature_label.csv",
+    "output_file": "data_feature_label_order.csv",
+    "chunk_size": 100_000,
+}
+
 TIME_FORMAT = "%Y/%m/%d %H:%M"
 RANDOM_SEED = 42
 MAX_OFFSET_MINUTES = 5
@@ -29,6 +32,7 @@ TRAIN_LABELS = {
     "抵达始发高铁站",
     "高铁站候车",
     "高铁行程途中",
+    "高铁即将到站",
     "抵达终点高铁站",
     "离开终点高铁站",
 }
@@ -37,6 +41,7 @@ FLIGHT_LABELS = {
     "抵达始发机场",
     "机场内活动",
     "飞机行程途中",
+    "飞机即将降落",
     "抵达终点机场",
     "离开终点机场",
 }
@@ -120,6 +125,20 @@ def add_random_offset(rng: random.Random, dt: datetime | None) -> datetime | Non
     return dt + timedelta(minutes=offset)
 
 
+def add_positive_random_offset(rng: random.Random, dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    offset = rng.randint(0, MAX_OFFSET_MINUTES)
+    return dt + timedelta(minutes=offset)
+
+
+def subtract_positive_random_offset(rng: random.Random, dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    offset = rng.randint(0, MAX_OFFSET_MINUTES)
+    return dt - timedelta(minutes=offset)
+
+
 def format_order(
     order_type: str,
     start_dt: datetime | None,
@@ -158,39 +177,25 @@ def build_train_order(rows: list[dict], rng: random.Random) -> str:
     arrive_indices = [i for i, r in enumerate(rows) if r["scene_label"] == "抵达终点高铁站"]
     leave_indices = [i for i, r in enumerate(rows) if r["scene_label"] == "离开终点高铁站"]
 
-    left_dt: datetime | None = None
-    right_dt: datetime | None = None
-
+    start_base_dt: datetime | None = None
     if waiting_indices:
-        left_dt = rows[waiting_indices[-1]].get("_parsed_time")
+        start_base_dt = rows[waiting_indices[-1]].get("_parsed_time")
     elif depart_indices:
-        left_dt = rows[depart_indices[-1]].get("_parsed_time")
+        start_base_dt = rows[depart_indices[-1]].get("_parsed_time")
 
-    if onboard_indices:
-        right_dt = rows[onboard_indices[0]].get("_parsed_time")
-    elif arrive_indices:
-        right_dt = rows[arrive_indices[0]].get("_parsed_time")
-
-    if left_dt is not None and right_dt is not None:
-        start_dt = left_dt + (right_dt - left_dt) / 2
-    elif left_dt is not None:
-        start_dt = left_dt
-    elif right_dt is not None:
-        start_dt = right_dt
-    else:
-        start_dt = rows[0].get("_parsed_time")
+    if start_base_dt is None:
+        return ""
 
     if arrive_indices:
         end_dt_raw = rows[arrive_indices[0]].get("_parsed_time")
-        end_dt = end_dt_raw - timedelta(minutes=1) if end_dt_raw else None
+        end_dt = subtract_positive_random_offset(rng, end_dt_raw)
     elif leave_indices:
         end_dt_raw = rows[leave_indices[0]].get("_parsed_time")
-        end_dt = end_dt_raw - timedelta(minutes=1) if end_dt_raw else None
+        end_dt = subtract_positive_random_offset(rng, end_dt_raw)
     else:
         end_dt = rows[-1].get("_parsed_time")
 
-    start_dt = add_random_offset(rng, start_dt)
-    end_dt = add_random_offset(rng, end_dt)
+    start_dt = add_positive_random_offset(rng, start_base_dt)
 
     if start_dt is not None and end_dt is not None and start_dt > end_dt:
         start_dt, end_dt = end_dt, start_dt
@@ -217,33 +222,34 @@ def build_train_order(rows: list[dict], rng: random.Random) -> str:
 def build_flight_order(rows: list[dict], rng: random.Random) -> str:
     depart_indices = [i for i, r in enumerate(rows) if r["scene_label"] == "抵达始发机场"]
     activity_indices = [i for i, r in enumerate(rows) if r["scene_label"] == "机场内活动"]
-    onboard_indices = [i for i, r in enumerate(rows) if r["scene_label"] == "飞机行程途中"]
+    onboard_indices = [
+        i
+        for i, r in enumerate(rows)
+        if r["scene_label"] in {"飞机行程途中", "飞机即将降落"}
+    ]
     arrive_indices = [i for i, r in enumerate(rows) if r["scene_label"] == "抵达终点机场"]
     leave_indices = [i for i, r in enumerate(rows) if r["scene_label"] == "离开终点机场"]
 
     if activity_indices:
         raw = rows[activity_indices[-1]].get("_parsed_time")
-        start_dt = raw + timedelta(minutes=1) if raw else None
+        start_dt = add_positive_random_offset(rng, raw)
     elif depart_indices:
         raw = rows[depart_indices[-1]].get("_parsed_time")
-        start_dt = raw + timedelta(minutes=1) if raw else None
+        start_dt = add_positive_random_offset(rng, raw)
     elif onboard_indices:
         raw = rows[onboard_indices[0]].get("_parsed_time")
-        start_dt = raw - timedelta(minutes=1) if raw else None
+        start_dt = subtract_positive_random_offset(rng, raw)
     else:
         start_dt = rows[0].get("_parsed_time")
 
     if arrive_indices:
         raw = rows[arrive_indices[0]].get("_parsed_time")
-        end_dt = raw - timedelta(minutes=1) if raw else None
+        end_dt = subtract_positive_random_offset(rng, raw)
     elif leave_indices:
         raw = rows[leave_indices[0]].get("_parsed_time")
-        end_dt = raw - timedelta(minutes=1) if raw else None
+        end_dt = subtract_positive_random_offset(rng, raw)
     else:
         end_dt = rows[-1].get("_parsed_time")
-
-    start_dt = add_random_offset(rng, start_dt)
-    end_dt = add_random_offset(rng, end_dt)
 
     if start_dt is not None and end_dt is not None and start_dt > end_dt:
         start_dt, end_dt = end_dt, start_dt
@@ -486,9 +492,15 @@ def process_csv(input_path: Path, output_path: Path, chunk_size: int) -> None:
 
         chunk_bar.close()
 
+    print(f"✅ 处理成功！结果已保存至: {output_path}")
+
 
 def main() -> None:
-    process_csv(INPUT_PATH, OUTPUT_PATH, CHUNK_SIZE)
+    process_csv(
+        Path(config["input_file"]),
+        Path(config["output_file"]),
+        config["chunk_size"],
+    )
 
 
 if __name__ == "__main__":
