@@ -1,6 +1,8 @@
 # `feature.py` 输出字段说明
 
-本文档说明 `feature.py` 处理后生成的 `a_feature.csv` 的字段结构、字段含义和取值规则。
+本文档说明 `feature.py` 处理后生成的 `data_feature.csv` 的字段结构、字段含义和取值规则。
+
+默认输入输出链路：`data.csv` → `data_feature.csv`
 
 返回上级说明：[`README.md`](./README.md)
 

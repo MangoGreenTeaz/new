@@ -19,6 +19,8 @@
 
 系统通过流式分块的方式读取 CSV 原始文件，按顺序遍历每条用户的交互记录。在这个过程中，为每个用户（`udid`）维护一个固定大小的**历史文本窗口**。每读入一条记录，就会将**当前的请求文本**、**关联的订单信息**、**距离出行/抵达的动态时间提示**以及**该用户最近几次的历史请求**按照特定格式拼接成一个完整的字符串（`MERGED_TEXT`）。
 
+默认输入输出链路：`data_feature_label_order.csv` → `data_feature_label_order_merge.csv`
+
 **数据前提假设：**
 1. 数据已经按照 `udid`（用户设备ID）和 `time`（交互时间）排列好。
 2. 同一个 `udid` 的记录是连续出现的。
@@ -100,8 +102,8 @@
 
 | 参数 | 类型 | 默认值 | 作用说明 |
 | :--- | :--- | :--- | :--- |
-| `input_file` | string | `..._feature_label.csv` | 输入数据的 CSV 文件路径 |
-| `output_file` | string | `..._muban_merged.csv` | 拼接完成后输出的 CSV 文件路径 |
+| `input_file` | string | `data_feature_label_order.csv` | 输入数据的 CSV 文件路径 |
+| `output_file` | string | `data_feature_label_order_merge.csv` | 拼接完成后输出的 CSV 文件路径 |
 | `n` | int | `10` | 历史记录窗口的大小，决定向前追溯几条历史交互 |
 | `batch_size` | int | `200000` | 流式处理时每次读取和写入内存的数据行数，用于控制内存占用 |
 | `time_window_minutes` | int | `120` | 时间提示触发窗口（分钟）。订单出发/抵达时间与当前时间差在此范围内时生成文案。**若设为 `0`，则对含有出发/到达时间的订单强制每条生成提示**。 |

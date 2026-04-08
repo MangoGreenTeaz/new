@@ -7,6 +7,15 @@ from collections import deque
 from tqdm import tqdm
 
 
+config = {
+    "input_file": "data_feature_label_order.csv",
+    "output_file": "data_feature_label_order_merge.csv",
+    "n": 10,
+    "batch_size": 200000,
+    "time_window_minutes": 120,
+}
+
+
 def _parse_order_time(order_text: str, field_name: str):
     """从 order 文本中解析出发/到达时间，失败返回 None。"""
     if not order_text:
@@ -221,15 +230,6 @@ MERGED_TEXT 规则：
 
     print(f"✅ 处理成功！结果已保存至: {output_file}")
 
-
-# 运行配置
-config = {
-    "input_file": "../data/单框架戏剧替换_test1_feature_label.csv",
-    "output_file": "../data/单框架戏剧替换_test1_muban_merged.csv",
-    "n": 10,
-    "batch_size": 200000,
-    "time_window_minutes": 120,
-}
 
 if __name__ == "__main__":
     if os.path.exists(config["input_file"]):

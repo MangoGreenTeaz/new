@@ -6,9 +6,12 @@ import polars as pl
 from tqdm import tqdm
 
 
-INPUT_PATH = Path("a.csv")
-OUTPUT_PATH = Path("a_feature.csv")
-CHUNK_SIZE = 100_000
+config = {
+    "input_file": "data.csv",
+    "output_file": "data_feature.csv",
+    "chunk_size": 100_000,
+}
+
 TIME_FORMAT = "%Y/%m/%d %H:%M"
 HOUR_GAP_COLUMN = "hours_since_prev"
 
@@ -254,9 +257,15 @@ def process_csv(input_path: Path, output_path: Path, chunk_size: int) -> None:
 
         chunk_bar.close()
 
+    print(f"✅ 处理成功！结果已保存至: {output_path}")
+
 
 def main() -> None:
-    process_csv(INPUT_PATH, OUTPUT_PATH, CHUNK_SIZE)
+    process_csv(
+        Path(config["input_file"]),
+        Path(config["output_file"]),
+        config["chunk_size"],
+    )
 
 
 if __name__ == "__main__":
