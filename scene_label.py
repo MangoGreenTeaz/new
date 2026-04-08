@@ -8,9 +8,13 @@ import polars as pl
 from tqdm import tqdm
 
 
-INPUT_PATH = Path("a.csv")
-OUTPUT_PATH = Path("a_label.csv")
-CHUNK_SIZE = 100_000
+config = {
+    "input_file": "data_feature.csv",
+    "output_file": "data_feature_label.csv",
+    "chunk_size": 100_000,
+    "save_all_columns": False,
+}
+
 TIME_FORMAT = "%Y/%m/%d %H:%M"
 SCENE_LABEL_COLUMN = "scene_label"
 REQUIRED_COLUMNS = [
@@ -47,15 +51,16 @@ CORE_OUTPUT_COLUMNS = [
     "history_usage",
     "service_click",
 ]
-SAVE_ALL_COLUMNS = False
 TRAIN_START_LABEL = "抵达始发高铁站"
 TRAIN_WAITING_LABEL = "高铁站候车"
 TRAIN_TRAVEL_LABEL = "高铁行程途中"
+TRAIN_APPROACH_LABEL = "高铁即将到站"
 TRAIN_ARRIVAL_LABEL = "抵达终点高铁站"
 TRAIN_EXIT_LABEL = "离开终点高铁站"
 AIR_START_LABEL = "抵达始发机场"
 AIR_ACTIVITY_LABEL = "机场内活动"
 AIR_TRAVEL_LABEL = "飞机行程途中"
+AIR_APPROACH_LABEL = "飞机即将降落"
 AIR_ARRIVAL_LABEL = "抵达终点机场"
 AIR_EXIT_LABEL = "离开终点机场"
 SELF_DRIVE_LABEL = "自驾途中"
@@ -145,6 +150,19 @@ def parse_datetime_value(value: object) -> datetime | None:
     return datetime.strptime(value, TIME_FORMAT)
 
 
+def is_within_minutes_before_target(
+    current_time_value: object,
+    target_time: datetime | None,
+    threshold_minutes: int,
+) -> bool:
+    current_time = parse_datetime_value(current_time_value)
+    if current_time is None or target_time is None:
+        return False
+
+    delta_seconds = (target_time - current_time).total_seconds()
+    return 0 <= delta_seconds <= threshold_minutes * 60
+
+
 def contains_keyword(value: object, keyword: str) -> bool:
     return isinstance(value, str) and keyword in value
 
@@ -204,6 +222,8 @@ def apply_travel_scene(
     travel_label: str,
     arrival_label: str,
     exit_label: str,
+    nearing_arrival_label: str | None = None,
+    nearing_arrival_minutes: int | None = None,
     stop_hours_threshold: int | None = None,
     max_range_length: int | None = None,
     discard_on_gap_hours: int | None = None,
@@ -326,9 +346,21 @@ def apply_travel_scene(
         if labels[b_index] == "":
             labels[b_index] = travel_label
 
+        c_time = parse_datetime_value(rows[c_index].get("time"))
         for label_index in range(b_index + 1, c_index):
             if labels[label_index] == "":
-                labels[label_index] = travel_label
+                if (
+                    nearing_arrival_label is not None
+                    and nearing_arrival_minutes is not None
+                    and is_within_minutes_before_target(
+                        rows[label_index].get("time"),
+                        c_time,
+                        nearing_arrival_minutes,
+                    )
+                ):
+                    labels[label_index] = nearing_arrival_label
+                else:
+                    labels[label_index] = travel_label
 
         if labels[c_index] == "":
             labels[c_index] = arrival_label
@@ -353,6 +385,8 @@ def process_high_speed_rail_scene(user_df: pl.DataFrame) -> pl.DataFrame:
         travel_label=TRAIN_TRAVEL_LABEL,
         arrival_label=TRAIN_ARRIVAL_LABEL,
         exit_label=TRAIN_EXIT_LABEL,
+        nearing_arrival_label=TRAIN_APPROACH_LABEL,
+        nearing_arrival_minutes=30,
         stop_hours_threshold=12,
     )
 
@@ -368,6 +402,8 @@ def process_airport_scene(user_df: pl.DataFrame) -> pl.DataFrame:
         travel_label=AIR_TRAVEL_LABEL,
         arrival_label=AIR_ARRIVAL_LABEL,
         exit_label=AIR_EXIT_LABEL,
+        nearing_arrival_label=AIR_APPROACH_LABEL,
+        nearing_arrival_minutes=30,
         max_range_length=15,
         discard_on_gap_hours=12,
     )
@@ -1472,7 +1508,7 @@ def process_csv(
     input_path: Path,
     output_path: Path,
     chunk_size: int,
-    save_all_columns: bool = SAVE_ALL_COLUMNS,
+    save_all_columns: bool = False,
 ) -> None:
     input_columns = validate_columns(input_path)
     total_rows = count_data_rows(input_path)
@@ -1519,9 +1555,16 @@ def process_csv(
 
         chunk_bar.close()
 
+    print(f"✅ 处理成功！结果已保存至: {output_path}")
+
 
 def main() -> None:
-    process_csv(INPUT_PATH, OUTPUT_PATH, CHUNK_SIZE, SAVE_ALL_COLUMNS)
+    process_csv(
+        Path(config["input_file"]),
+        Path(config["output_file"]),
+        config["chunk_size"],
+        config["save_all_columns"],
+    )
 
 
 if __name__ == "__main__":
