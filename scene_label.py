@@ -60,7 +60,6 @@ TRAIN_EXIT_LABEL = "离开终点高铁站"
 AIR_START_LABEL = "抵达始发机场"
 AIR_ACTIVITY_LABEL = "机场内活动"
 AIR_TRAVEL_LABEL = "飞机行程途中"
-AIR_APPROACH_LABEL = "飞机即将降落"
 AIR_ARRIVAL_LABEL = "抵达终点机场"
 AIR_EXIT_LABEL = "离开终点机场"
 SELF_DRIVE_LABEL = "自驾途中"
@@ -402,8 +401,6 @@ def process_airport_scene(user_df: pl.DataFrame) -> pl.DataFrame:
         travel_label=AIR_TRAVEL_LABEL,
         arrival_label=AIR_ARRIVAL_LABEL,
         exit_label=AIR_EXIT_LABEL,
-        nearing_arrival_label=AIR_APPROACH_LABEL,
-        nearing_arrival_minutes=30,
         max_range_length=15,
         discard_on_gap_hours=12,
     )
