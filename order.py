@@ -41,7 +41,6 @@ FLIGHT_LABELS = {
     "抵达始发机场",
     "机场内活动",
     "飞机行程途中",
-    "飞机即将降落",
     "抵达终点机场",
     "离开终点机场",
 }
@@ -225,7 +224,7 @@ def build_flight_order(rows: list[dict], rng: random.Random) -> str:
     onboard_indices = [
         i
         for i, r in enumerate(rows)
-        if r["scene_label"] in {"飞机行程途中", "飞机即将降落"}
+        if r["scene_label"] == "飞机行程途中"
     ]
     arrive_indices = [i for i, r in enumerate(rows) if r["scene_label"] == "抵达终点机场"]
     leave_indices = [i for i, r in enumerate(rows) if r["scene_label"] == "离开终点机场"]
