@@ -100,25 +100,6 @@ TRAVEL_IRRELEVANT_POI_KEYWORDS = [
     "旅游景点",
     "酒店旅馆",
     "地铁站",
-    "游乐园",
-    "动植物园",
-    "公园及休憩用地",
-    "体育场",
-    "体育中心",
-    "水上运动中心",
-    "露营地",
-    "高尔夫球场",
-    "游泳馆",
-    "博物馆",
-    "戏剧",
-    "宗教场所",
-    "图书馆",
-    "购物中心",
-    "店铺",
-    "市场",
-    "购物",
-    "便利店",
-    "娱乐/夜生活",
 ]
 
 
@@ -225,7 +206,9 @@ def apply_travel_scene(
     nearing_arrival_minutes: int | None = None,
     stop_hours_threshold: int | None = None,
     max_range_length: int | None = None,
+    max_range_duration_hours: int | None = None,
     discard_on_gap_hours: int | None = None,
+    unrelated_stop_count: int = 3,
 ) -> pl.DataFrame:
     if user_df.height == 0:
         return user_df
@@ -242,8 +225,6 @@ def apply_travel_scene(
 
         start_index = index
         last_related_index = start_index
-        has_excluded_poi = False
-        has_cross_city = False
         unrelated_streak = 0
         scan_index = start_index
 
@@ -260,17 +241,12 @@ def apply_travel_scene(
                 and hours_since_prev > stop_hours_threshold
             ):
                 break
-            if contains_keyword(row.get("poi"), exclude_keyword):
-                has_excluded_poi = True
-            if truthy(row.get("move_cross_city")):
-                has_cross_city = True
-
             if related_checker(row):
                 last_related_index = scan_index
                 unrelated_streak = 0
             else:
                 unrelated_streak += 1
-                if unrelated_streak >= 3:
+                if unrelated_streak >= unrelated_stop_count:
                     break
 
             scan_index += 1
@@ -279,6 +255,7 @@ def apply_travel_scene(
 
         range_rows = rows[start_index : end_index + 1]
         range_length = end_index - start_index + 1
+        has_excluded_poi = any(contains_keyword(row.get("poi"), exclude_keyword) for row in range_rows)
 
         has_cross_city = any(
             truthy(row.get("move_cross_city"))
@@ -291,6 +268,16 @@ def apply_travel_scene(
         if max_range_length is not None and range_length > max_range_length:
             index = end_index + 1
             continue
+        if max_range_duration_hours is not None:
+            range_start_time = parse_datetime_value(rows[start_index].get("time"))
+            range_end_time = parse_datetime_value(rows[end_index].get("time"))
+            if (
+                range_start_time is not None
+                and range_end_time is not None
+                and (range_end_time - range_start_time).total_seconds() > max_range_duration_hours * 3600
+            ):
+                index = end_index + 1
+                continue
         if discard_on_gap_hours is not None and has_gap_exceeding(range_rows, discard_on_gap_hours):
             index = end_index + 1
             continue
@@ -401,8 +388,9 @@ def process_airport_scene(user_df: pl.DataFrame) -> pl.DataFrame:
         travel_label=AIR_TRAVEL_LABEL,
         arrival_label=AIR_ARRIVAL_LABEL,
         exit_label=AIR_EXIT_LABEL,
-        max_range_length=15,
+        max_range_duration_hours=12,
         discard_on_gap_hours=12,
+        unrelated_stop_count=5,
     )
 
 
@@ -1256,7 +1244,7 @@ def process_travel_irrelevant_scene(user_df: pl.DataFrame) -> pl.DataFrame:
         if initial_labels[index] != "":
             continue
 
-        start_index = max(0, index - 10)
+        start_index = max(0, index - 5)
         end_index = index + 1
         window_rows = rows[start_index:end_index]
         window_labels = initial_labels[start_index:end_index]
@@ -1269,7 +1257,7 @@ def process_travel_irrelevant_scene(user_df: pl.DataFrame) -> pl.DataFrame:
         ):
             continue
         if any(
-            truthy(window_row.get("move_cross_city")) or truthy(window_row.get("move_fast"))
+            truthy(window_row.get("move_cross_city"))
             for window_row in window_rows
         ):
             continue
